@@ -1,46 +1,34 @@
-const errorCounts = new Map();
+import { toHttpError } from '../utils/errorHandler.js';
+import { logger } from '../utils/logger.js';
 
-export function errorHandler(err, req, res, next) {
-  if (res.headersSent) return next(err);
+/** Used by legacy `server.js` `/metrics` route. */
+export function getMetrics() {
+  return {};
+}
 
-  const status = err.status || err.statusCode || 500;
-  const code = err.code || 'INTERNAL_ERROR';
-  const message = err.message || 'An unexpected error occurred';
+export function errorHandler(err, req, res, _next) {
+  const httpErr = toHttpError(err);
+  const requestId = req.id || req.headers['x-request-id'];
 
-  const key = `${status}:${code}`;
-  errorCounts.set(key, (errorCounts.get(key) || 0) + 1);
-
-  if (status >= 500) {
-    console.error({
-      error: err.message,
-      code,
-      stack: err.stack,
-      path: req.path,
+  logger.error(
+    {
+      request_id: requestId,
+      err,
+      status: httpErr.status,
+      code: httpErr.code,
+      endpoint: req.originalUrl,
       method: req.method,
-      userId: req.user?.id,
-      lang: req.lang,
-      timestamp: new Date().toISOString(),
-    });
-  }
+    },
+    'request failed',
+  );
 
-  res.status(status).json({
+  res.status(httpErr.status).json({
     error: {
-      code,
-      message: status >= 500 ? 'Internal server error' : message,
-      ...(process.env.NODE_ENV === 'development' && err.stack ? { stack: err.stack } : {}),
+      code: httpErr.code,
+      message: httpErr.message,
+      request_id: requestId,
+      details: httpErr.details,
     },
   });
 }
 
-export function getMetrics() {
-  return Object.fromEntries(errorCounts);
-}
-
-export class HttpError extends Error {
-  constructor(status, code, message, expose = true) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.expose = expose;
-  }
-}

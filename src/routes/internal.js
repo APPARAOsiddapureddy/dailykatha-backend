@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { Queue } from 'bullmq';
-import { HttpError } from '../middleware/errorHandler.js';
+import { HttpError } from '../utils/errorHandler.js';
 import { query } from '../db/pool.js';
 import { redis } from '../services/redis.js';
 import { validateGenerationJobPayload } from '../validation/jobSchema.js';

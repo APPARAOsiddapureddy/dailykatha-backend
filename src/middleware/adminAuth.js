@@ -1,4 +1,4 @@
-import { HttpError } from './errorHandler.js';
+import { HttpError } from '../utils/errorHandler.js';
 
 export function adminAuth(req, _res, next) {
   if (!req.user) return next(new HttpError(401, 'UNAUTHORIZED', 'Login required'));

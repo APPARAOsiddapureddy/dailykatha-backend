@@ -30,8 +30,9 @@ OpenAPI UI: `http://localhost:3000/api-docs` and `http://localhost:3000/daily-ka
 4. Set `JWT_SECRET`, `CORS_WHITELIST`, `NODE_ENV=production`, `ENVIRONMENT=production`, optional `SENTRY_DSN`.
    - **Redis:** optional; without `REDIS_URL` the API does not open a Redis connection.
    - **Neon:** prefer the **pooler** connection string (host contains `-pooler`). Paste `DATABASE_URL` from Neon into Render. The server normalizes Neon URLs (drops `channel_binding=require` for `node-pg` compatibility, ensures `sslmode=require` on `*.neon.tech`). Optional: `PG_POOL_MAX` (default 10), `PG_IDLE_MS`, `PG_CONNECTION_TIMEOUT_MS`.
-5. **Build / release command** (or a one-off shell job): `cd backend && npm ci && npm run migrate:prod` using the same `DATABASE_URL`, then deploy. The included GitHub Action runs migrations before calling the deploy hook.
-6. In Render dashboard, create a **Deploy Hook** and store it as `RENDER_DEPLOY_HOOK_URL` in GitHub **production** secrets.
+5. **Run DB migrations on Neon** before relying on OTP without Redis: `npm ci && npm run migrate:prod` with `DATABASE_URL` set (same string as Render). If logs show `relation "otp_codes" does not exist`, migrations never ran — paste `scripts/sql/create_otp_codes.sql` into Neon **SQL Editor** as a one-shot fix. For the **`dailykatha-backend`** GitHub repo, enable workflow `database-migrate.yml` and add repository secret **`DATABASE_URL`** so each push to `main` applies migrations.
+6. **Build / release command** (or a one-off shell job): same migrate command if you prefer shell over CI; the monorepo GitHub Action `backend-cd-render.yml` runs migrations before the deploy hook.
+7. In Render dashboard, create a **Deploy Hook** and store it as `RENDER_DEPLOY_HOOK_URL` in GitHub **production** secrets (monorepo only).
 
 ## GitHub Actions secrets
 

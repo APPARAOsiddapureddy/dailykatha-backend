@@ -20,6 +20,23 @@ import adminRoutes from './routes/admin.js';
 import { adminAuth } from './middleware/adminAuth.js';
 import { startCronJobs } from './services/cronJobs.js';
 
+/** Short operator hints for /health (no secrets; does not log raw connection strings). */
+function dbHealthDiagnostics(err) {
+  const code = err?.code != null ? String(err.code) : 'UNKNOWN';
+  const hints = {
+    ECONNREFUSED: 'Cannot reach DB host:port — check DATABASE_URL and that the Neon project is not suspended.',
+    ENOTFOUND: 'DB hostname does not resolve — typo in DATABASE_URL?',
+    ETIMEDOUT: 'DB connect timed out — use Neon pooler URL; check region / IP allowlist.',
+    ECONNRESET: 'Connection reset during DB — prefer Neon pooler; ensure sslmode=require.',
+    '28P01': 'Postgres auth failed — wrong user or password in DATABASE_URL (rotate in Neon if unsure).',
+    '3D000': 'Database in URL path does not exist (e.g. /neondb must match your Neon DB name).',
+  };
+  return {
+    code,
+    hint: hints[code] || 'Open Render → Logs and search for "Health DB check failed".',
+  };
+}
+
 function fatalUnlessEnv(name) {
   const v = process.env[name];
   if (v == null || String(v).trim() === '') {
@@ -66,6 +83,7 @@ app.get('/health', async (_req, res) => {
       status: 'error',
       message: 'Service unavailable',
       db: 'error',
+      db_diagnostics: dbHealthDiagnostics(err),
       redis: redis ? 'unknown' : 'disabled',
       ...base,
     });

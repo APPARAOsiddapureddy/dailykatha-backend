@@ -11,6 +11,14 @@ const { Pool } = pg;
 export function normalizeDatabaseUrl(raw) {
   if (raw == null || raw === '') return raw;
   let u = String(raw).trim();
+  // Paste errors from dashboards (quotes / line breaks) cause ENOTFOUND on the DB host.
+  u = u.replace(/[\r\n]+/g, '');
+  while (
+    (u.startsWith('"') && u.endsWith('"')) ||
+    (u.startsWith("'") && u.endsWith("'"))
+  ) {
+    u = u.slice(1, -1).trim();
+  }
   u = u.replace(/[?&]channel_binding=[^&]*/gi, '');
   u = u.replace(/\?&+/g, '?').replace(/&&+/g, '&').replace(/&$/g, '');
   if (/neon\.tech/i.test(u) && !/[?&]sslmode=/i.test(u)) {

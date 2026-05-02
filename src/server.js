@@ -25,7 +25,8 @@ function dbHealthDiagnostics(err) {
   const code = err?.code != null ? String(err.code) : 'UNKNOWN';
   const hints = {
     ECONNREFUSED: 'Cannot reach DB host:port — check DATABASE_URL and that the Neon project is not suspended.',
-    ENOTFOUND: 'DB hostname does not resolve — typo in DATABASE_URL?',
+    ENOTFOUND:
+      'DNS cannot resolve DB hostname — fix typo in DATABASE_URL, remove accidental quotes/newlines, use Neon pooler host (…-pooler…neon.tech).',
     ETIMEDOUT: 'DB connect timed out — use Neon pooler URL; check region / IP allowlist.',
     ECONNRESET: 'Connection reset during DB — prefer Neon pooler; ensure sslmode=require.',
     '28P01': 'Postgres auth failed — wrong user or password in DATABASE_URL (rotate in Neon if unsure).',

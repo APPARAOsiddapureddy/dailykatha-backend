@@ -240,6 +240,16 @@ router.post('/generate', async (req, res, next) => {
       return res.status(400).json({ error: { code: 'MISSING_INTERESTS', message: 'interestIds array required' } });
     }
 
+    if (!generationQueue) {
+      return res.status(503).json({
+        error: {
+          code: 'QUEUE_UNAVAILABLE',
+          message:
+            'Generation queue needs Redis. Set REDIS_URL on this service (or run a separate worker with Redis).',
+        },
+      });
+    }
+
     const jobId = randomUUID();
     const payload = {
       jobId,

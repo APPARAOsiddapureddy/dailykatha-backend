@@ -5,13 +5,6 @@ import { generateCards } from '../services/claude.js';
 import { validateAllCards } from '../validation/cardSchema.js';
 import { redis, invalidateAllFeedCaches } from '../services/redis.js';
 
-if (!redis) {
-  console.error(
-    '[worker] REDIS_URL is not set — BullMQ needs Redis. Start worker only when Redis is configured.',
-  );
-  process.exit(0);
-}
-
 function bigrams(s) {
   const t = String(s || '')
     .toLowerCase()
@@ -57,92 +50,114 @@ async function isNearDuplicate(quoteEn, category) {
   return false;
 }
 
-export const generationQueue = new Queue('generation-queue', { connection: redis });
+/** Null when `REDIS_URL` is unset — API still starts; admin enqueue returns 503. */
+export const generationQueue = redis
+  ? new Queue('generation-queue', { connection: redis })
+  : null;
 
-export const worker = new Worker(
-  'generation-queue',
-  async (job) => {
-    const { jobId, payload } = job.data || {};
-    if (!jobId) throw new Error('jobId is required');
+export let worker = null;
 
-    await pool.query(`UPDATE generation_jobs SET status = 'running' WHERE id = $1`, [jobId]);
+if (redis) {
+  worker = new Worker(
+    'generation-queue',
+    async (job) => {
+      const { jobId, payload } = job.data || {};
+      if (!jobId) throw new Error('jobId is required');
 
-    let rawOutput;
-    try {
-      rawOutput = await generateCards(payload);
-    } catch (err) {
+      await pool.query(`UPDATE generation_jobs SET status = 'running' WHERE id = $1`, [jobId]);
+
+      let rawOutput;
+      try {
+        rawOutput = await generateCards(payload);
+      } catch (err) {
+        await pool.query(
+          `UPDATE generation_jobs
+           SET status = 'failed',
+               error = $1,
+               completed_at = NOW()
+           WHERE id = $2`,
+          [JSON.stringify({ code: 'CLAUDE_API_ERROR', message: err.message }), jobId],
+        );
+        throw err;
+      }
+
+      const { valid, invalid } = validateAllCards(rawOutput.cards || []);
+
+      const accepted = [];
+      const rejected = [];
+      for (const card of valid) {
+        const isDup = await isNearDuplicate(card.quote.en, card.category);
+        if (isDup) rejected.push({ card, reason: 'near-duplicate' });
+        else accepted.push(card);
+      }
+
+      const insertedIds = [];
+      for (const card of accepted) {
+        const result = await pool.query(
+          `INSERT INTO cards
+             (id, section, category, mood, is_festival, festival, quote, author, is_active)
+           VALUES
+             (gen_random_uuid(), $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, true)
+           RETURNING id`,
+          [
+            card.section,
+            card.category,
+            card.mood,
+            card.isFestival,
+            card.festival,
+            JSON.stringify(card.quote),
+            JSON.stringify(card.author),
+          ],
+        );
+        insertedIds.push(result.rows[0].id);
+      }
+
+      await invalidateAllFeedCaches();
+
       await pool.query(
         `UPDATE generation_jobs
-         SET status = 'failed',
-             error = $1,
-             completed_at = NOW()
-         WHERE id = $2`,
-        [JSON.stringify({ code: 'CLAUDE_API_ERROR', message: err.message }), jobId],
-      );
-      throw err;
-    }
-
-    const { valid, invalid } = validateAllCards(rawOutput.cards || []);
-
-    const accepted = [];
-    const rejected = [];
-    for (const card of valid) {
-      const isDup = await isNearDuplicate(card.quote.en, card.category);
-      if (isDup) rejected.push({ card, reason: 'near-duplicate' });
-      else accepted.push(card);
-    }
-
-    const insertedIds = [];
-    for (const card of accepted) {
-      const result = await pool.query(
-        `INSERT INTO cards
-           (id, section, category, mood, is_festival, festival, quote, author, is_active)
-         VALUES
-           (gen_random_uuid(), $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, true)
-         RETURNING id`,
+         SET status = 'completed',
+             output_cards = $1::jsonb,
+             completed_at = NOW(),
+             model = $2
+         WHERE id = $3`,
         [
-          card.section,
-          card.category,
-          card.mood,
-          card.isFestival,
-          card.festival,
-          JSON.stringify(card.quote),
-          JSON.stringify(card.author),
+          JSON.stringify({
+            totalRequested: payload?.constraints?.cardsRequested,
+            totalValid: valid.length,
+            totalInvalid: invalid.length,
+            totalDuplicates: rejected.length,
+            totalInserted: insertedIds.length,
+            insertedIds,
+            invalidSamples: invalid.slice(0, 5),
+          }),
+          rawOutput.model,
+          jobId,
         ],
       );
-      insertedIds.push(result.rows[0].id);
-    }
 
-    await invalidateAllFeedCaches();
+      return { inserted: insertedIds.length, rejected: rejected.length };
+    },
+    { connection: redis, concurrency: 2 },
+  );
 
-    await pool.query(
-      `UPDATE generation_jobs
-       SET status = 'completed',
-           output_cards = $1::jsonb,
-           completed_at = NOW(),
-           model = $2
-       WHERE id = $3`,
-      [
-        JSON.stringify({
-          totalRequested: payload?.constraints?.cardsRequested,
-          totalValid: valid.length,
-          totalInvalid: invalid.length,
-          totalDuplicates: rejected.length,
-          totalInserted: insertedIds.length,
-          insertedIds,
-          invalidSamples: invalid.slice(0, 5),
-        }),
-        rawOutput.model,
-        jobId,
-      ],
-    );
+  worker.on('failed', (job, err) => {
+    console.error(`Generation job ${job?.id} failed:`, err.message);
+  });
+}
 
-    return { inserted: insertedIds.length, rejected: rejected.length };
-  },
-  { connection: redis, concurrency: 2 },
-);
+/** `npm run worker` / `node src/workers/generationWorker.js` without Redis must fail fast. */
+const entryScript = process.argv[1]?.replace(/\\/g, '/') ?? '';
+const ranWorkerCli = entryScript.includes('generationWorker.js');
 
-worker.on('failed', (job, err) => {
-  console.error(`Generation job ${job?.id} failed:`, err.message);
-});
+if (ranWorkerCli && !redis) {
+  console.error(
+    '[worker] REDIS_URL is not set — BullMQ needs Redis. Start worker only when Redis is configured.',
+  );
+  process.exit(1);
+} else if (!redis && !ranWorkerCli) {
+  console.warn(
+    '[bullmq] REDIS_URL not set — admin AI generation queue disabled (/admin/generate returns 503 until Redis is configured).',
+  );
+}
 

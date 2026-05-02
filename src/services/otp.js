@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { qaShortcutsEnabled } from '../config/qa.js';
 import { pool } from '../db/pool.js';
 import { getRedis } from './cache.js';
 
@@ -41,9 +42,10 @@ async function verifyOtpPostgres(phoneDigits, codeNorm) {
 }
 
 export async function storeOtp(phoneDigits) {
-  const code = isTestBypassPhone(phoneDigits)
-    ? TEST_FIXED_OTP
-    : crypto.randomInt(100000, 999999).toString();
+  const code =
+    isTestBypassPhone(phoneDigits) && qaShortcutsEnabled()
+      ? TEST_FIXED_OTP
+      : crypto.randomInt(100000, 999999).toString();
 
   const r = getRedis();
   if (r) {
@@ -75,8 +77,8 @@ export async function storeOtp(phoneDigits) {
 
 export async function verifyOtp(phoneDigits, code) {
   const codeNorm = String(code).replace(/\D/g, '');
-  /** QA lines (`123456xxxx`) always use [TEST_FIXED_OTP]; never depend on Redis/Postgres sync. */
-  if (isTestBypassPhone(phoneDigits) && codeNorm === TEST_FIXED_OTP) {
+  /** QA shortcut: fixed OTP only when [qaShortcutsEnabled]. */
+  if (isTestBypassPhone(phoneDigits) && qaShortcutsEnabled() && codeNorm === TEST_FIXED_OTP) {
     return true;
   }
 

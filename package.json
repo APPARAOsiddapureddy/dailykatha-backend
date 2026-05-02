@@ -13,6 +13,7 @@
     "migrate": "node scripts/run-pg-migrate.mjs up",
     "migrate:down": "node scripts/run-pg-migrate.mjs down",
     "migrate:prod": "node scripts/run-pg-migrate.mjs up",
+    "db:ping": "node scripts/test-db-connection.mjs",
     "lint": "node -c src/app.js >/dev/null",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.integration.config.cjs",

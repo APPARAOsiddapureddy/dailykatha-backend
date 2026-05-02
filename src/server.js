@@ -1,8 +1,10 @@
 import 'dotenv/config';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 
+import { corsMiddleware } from './middleware/cors.js';
 import { errorHandler, getMetrics } from './middleware/errorHandler.js';
 import { jwtAuth, internalKeyAuth } from './middleware/auth.js';
 import { authLimiter, generalLimiter, internalLimiter } from './middleware/rateLimit.js';
@@ -50,21 +52,48 @@ function fatalUnlessEnv(name) {
 fatalUnlessEnv('DATABASE_URL');
 fatalUnlessEnv('JWT_SECRET');
 
+if (process.env.NODE_ENV === 'production' && process.env.ENABLE_QA_SHORTCUTS === 'true') {
+  console.warn(
+    '[config] ENABLE_QA_SHORTCUTS=true in production — 123456xxxx test lines use fixed OTP. Disable for public launch.',
+  );
+}
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    release: `daily-katha-api@${process.env.APP_VERSION || '1.0.0'}`,
+  });
+}
+
 const app = express();
 app.set('trust proxy', 1);
 
+const isProd = (process.env.NODE_ENV || 'development') === 'production';
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: isProd
+      ? { useDefaults: true, directives: { defaultSrc: ["'self'"] } }
+      : false,
+    crossOriginEmbedderPolicy: false,
+    hsts: isProd ? { maxAge: 31_536_000, includeSubDomains: true } : false,
+    frameguard: { action: 'deny' },
+    noSniff: true,
   }),
 );
 
+const corsAllowlist = (process.env.CORS_WHITELIST || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 app.use(
-  cors({
-    origin: false,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language', 'X-Internal-Key'],
-  }),
+  corsAllowlist.length > 0
+    ? corsMiddleware
+    : cors({
+        origin: false,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language', 'X-Internal-Key'],
+      }),
 );
 
 app.use(express.json({ limit: '2mb' }));
@@ -83,9 +112,11 @@ app.get('/health', async (_req, res) => {
     return res.status(503).json({
       status: 'error',
       message: 'Service unavailable',
+      database: 'error',
       db: 'error',
       db_diagnostics: dbHealthDiagnostics(err),
       redis: redis ? 'unknown' : 'disabled',
+      environment: process.env.ENVIRONMENT || process.env.NODE_ENV || 'development',
       ...base,
     });
   }
@@ -102,10 +133,13 @@ app.get('/health', async (_req, res) => {
     }
   }
 
+  const envName = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
   res.json({
     status: 'ok',
+    database: 'connected',
     db: 'connected',
     redis: redisStatus,
+    environment: envName,
     ...base,
   });
 });

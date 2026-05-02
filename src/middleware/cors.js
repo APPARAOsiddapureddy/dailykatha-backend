@@ -9,7 +9,13 @@ export const corsMiddleware = cors({
     return cb(null, allowed);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language', 'X-Request-Id'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept-Language',
+    'X-Request-Id',
+    'X-Internal-Key',
+  ],
   credentials: false,
 });
 

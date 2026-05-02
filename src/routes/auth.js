@@ -1,10 +1,13 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
+import { qaShortcutsEnabled } from '../config/qa.js';
 import { HttpError } from '../utils/errorHandler.js';
 import { query } from '../db/pool.js';
 import { signUserToken } from '../services/jwt.js';
 import { isTestBypassPhone, storeOtp, verifyOtp } from '../services/otp.js';
 import { sendOtpViaWhatsApp } from '../services/whatsappOtp.js';
 import { getUserInterests } from '../db/queries/userInterests.js';
+import { maskIndiaPhone } from '../utils/phoneMask.js';
 
 const router = Router();
 
@@ -34,14 +37,21 @@ router.post('/send-otp', async (req, res, next) => {
     const phone = normalizePhone(req.body?.phone);
     if (!phone) throw new HttpError(400, 'INVALID_PHONE', 'Provide a valid 10-digit Indian mobile');
     const code = await storeOtp(phone);
-    const testBypass = isTestBypassPhone(phone);
+    const referenceId = randomUUID();
+    const testBypass = isTestBypassPhone(phone) && qaShortcutsEnabled();
     if (process.env.NODE_ENV !== 'production' || process.env.OTP_LOG_IN_PROD === 'true' || testBypass) {
-      console.info(`[otp] ${phone} -> ${code}${testBypass ? ' (test prefix — fixed OTP)' : ''}`);
+      console.info(`[otp] ${phone} -> ${code}${testBypass ? ' (QA shortcut)' : ''}`);
     }
+    const payloadBase = {
+      ok: true,
+      success: true,
+      requestId: phone,
+      reference_id: referenceId,
+      expires_in: 600,
+    };
     if (testBypass) {
       res.json({
-        ok: true,
-        requestId: phone,
+        ...payloadBase,
         channel: 'test',
         message: `Test number — use OTP ${code}`,
       });
@@ -49,10 +59,9 @@ router.post('/send-otp', async (req, res, next) => {
     }
     await sendOtpViaWhatsApp(phone, code);
     res.json({
-      ok: true,
-      requestId: phone,
+      ...payloadBase,
       channel: 'whatsapp',
-      message: 'OTP sent to your WhatsApp',
+      message: `OTP sent to your WhatsApp ${maskIndiaPhone(phone)}`,
     });
   } catch (e) {
     next(e);

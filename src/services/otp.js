@@ -49,6 +49,12 @@ export async function storeOtp(phoneDigits) {
   if (r) {
     try {
       await r.set(key(phoneDigits), code, 'EX', TTL);
+      // Keep Postgres in sync so verify works if Redis key missing / multi-instance / eviction.
+      try {
+        await storeOtpPostgres(phoneDigits, code);
+      } catch (e) {
+        console.warn('[otp] Postgres dual-write after Redis failed:', e.message);
+      }
       return code;
     } catch {
       // fall through to Postgres / memory
@@ -74,11 +80,17 @@ export async function verifyOtp(phoneDigits, code) {
   if (r) {
     try {
       const stored = await r.get(key(phoneDigits));
-      if (!stored || stored !== codeNorm) return false;
-      await r.del(key(phoneDigits));
-      return true;
+      if (stored === codeNorm) {
+        await r.del(key(phoneDigits));
+        return true;
+      }
+      // Wrong OTP present in Redis — do not fall through (Postgres would still hold an old code).
+      if (stored != null && stored !== codeNorm) {
+        return false;
+      }
+      // Key missing in Redis — try Postgres / memory (instances differ or TTL/eviction).
     } catch {
-      // fall through
+      // Redis error — fall through to Postgres / memory
     }
   }
 

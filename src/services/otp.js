@@ -75,6 +75,10 @@ export async function storeOtp(phoneDigits) {
 
 export async function verifyOtp(phoneDigits, code) {
   const codeNorm = String(code).replace(/\D/g, '');
+  /** QA lines (`123456xxxx`) always use [TEST_FIXED_OTP]; never depend on Redis/Postgres sync. */
+  if (isTestBypassPhone(phoneDigits) && codeNorm === TEST_FIXED_OTP) {
+    return true;
+  }
 
   const r = getRedis();
   if (r) {

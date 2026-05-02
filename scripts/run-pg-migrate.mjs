@@ -7,13 +7,14 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { normalizeDatabaseUrl } from '../src/db/normalizeDatabaseUrl.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(__dirname, '..');
 
 dotenv.config({ path: path.join(backendRoot, '.env') });
 
-const dbUrl = process.env.DATABASE_URL?.trim();
+const dbUrl = normalizeDatabaseUrl(process.env.DATABASE_URL?.trim());
 if (!dbUrl) {
   console.error(`
 DATABASE_URL is not set.

@@ -1,31 +1,10 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { normalizeDatabaseUrl } from './normalizeDatabaseUrl.js';
 
 const { Pool } = pg;
 
-/**
- * Normalize DATABASE_URL for Neon + node-pg:
- * - Drop channel_binding=require (often breaks or resets TLS handshakes with pg on Render).
- * - Ensure sslmode=require for *.neon.tech when missing.
- */
-export function normalizeDatabaseUrl(raw) {
-  if (raw == null || raw === '') return raw;
-  let u = String(raw).trim();
-  // Paste errors from dashboards (quotes / line breaks) cause ENOTFOUND on the DB host.
-  u = u.replace(/[\r\n]+/g, '');
-  while (
-    (u.startsWith('"') && u.endsWith('"')) ||
-    (u.startsWith("'") && u.endsWith("'"))
-  ) {
-    u = u.slice(1, -1).trim();
-  }
-  u = u.replace(/[?&]channel_binding=[^&]*/gi, '');
-  u = u.replace(/\?&+/g, '?').replace(/&&+/g, '&').replace(/&$/g, '');
-  if (/neon\.tech/i.test(u) && !/[?&]sslmode=/i.test(u)) {
-    u += u.includes('?') ? '&sslmode=require' : '?sslmode=require';
-  }
-  return u;
-}
+export { normalizeDatabaseUrl } from './normalizeDatabaseUrl.js';
 
 function isTransientDbError(err) {
   const c = err?.code;

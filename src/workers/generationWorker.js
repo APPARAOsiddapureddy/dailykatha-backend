@@ -5,6 +5,13 @@ import { generateCards } from '../services/claude.js';
 import { validateAllCards } from '../validation/cardSchema.js';
 import { redis, invalidateAllFeedCaches } from '../services/redis.js';
 
+if (!redis) {
+  console.error(
+    '[worker] REDIS_URL is not set — BullMQ needs Redis. Start worker only when Redis is configured.',
+  );
+  process.exit(0);
+}
+
 function bigrams(s) {
   const t = String(s || '')
     .toLowerCase()

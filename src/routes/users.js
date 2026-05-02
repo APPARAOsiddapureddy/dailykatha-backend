@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { HttpError } from '../middleware/errorHandler.js';
+import { HttpError } from '../utils/errorHandler.js';
 import { query } from '../db/pool.js';
 import { mapCardRow } from '../utils/cardMapper.js';
 import { invalidateUserFeedCache } from '../services/redis.js';

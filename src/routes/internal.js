@@ -9,7 +9,7 @@ const router = Router();
 
 router.post('/generation-jobs', async (req, res, next) => {
   try {
-    if (!process.env.REDIS_URL) return next(new HttpError(503, 'NO_REDIS', 'REDIS_URL required for generation jobs'));
+    if (!redis) return next(new HttpError(503, 'NO_REDIS', 'Redis not configured — generation queue unavailable'));
     const queue = new Queue('generation-queue', { connection: redis });
     const parsed = validateGenerationJobPayload(req.body ?? {});
     if (!parsed.success) {

@@ -1,11 +1,12 @@
 import { invalidateUserFeedCache, redis } from './redis.js';
 
-/** Shared Redis client (same connection as rate limits / feed cache). */
+/** Shared Redis client when `REDIS_URL` is set; otherwise `null`. */
 export function getRedis() {
   return redis;
 }
 
 export async function cacheGet(key) {
+  if (!redis) return null;
   try {
     return await redis.get(key);
   } catch (e) {
@@ -15,6 +16,7 @@ export async function cacheGet(key) {
 }
 
 export async function cacheSet(key, value, ttlSec) {
+  if (!redis) return;
   try {
     if (ttlSec) await redis.set(key, value, 'EX', ttlSec);
     else await redis.set(key, value);

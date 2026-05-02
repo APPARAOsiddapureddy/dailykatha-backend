@@ -129,10 +129,12 @@ export async function generateTodaysPicks({ interests = ALL_INTERESTS } = {}) {
   }
 
   await invalidateAllFeedCaches();
-  try {
-    const keys = await redis.keys('todays_picks:*');
-    if (keys.length) await redis.del(...keys);
-  } catch {}
+  if (redis) {
+    try {
+      const keys = await redis.keys('todays_picks:*');
+      if (keys.length) await redis.del(...keys);
+    } catch {}
+  }
 
   return results;
 }
@@ -150,8 +152,10 @@ function distribution(interests) {
 export async function getUserTodaysPicks({ userId, lang }) {
   const date = todayISO();
   const cacheKey = `todays_picks:${userId}:${date}:${lang}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (redis) {
+    const cached = await redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
 
   const { rows: irows } = await pool.query(
     `SELECT interest_id FROM user_interests WHERE user_id = $1 ORDER BY rank ASC`,
@@ -197,7 +201,9 @@ export async function getUserTodaysPicks({ userId, lang }) {
     }
   } catch {}
 
-  await redis.set(cacheKey, JSON.stringify(out), 'EX', secondsUntilMidnightIST());
+  if (redis) {
+    await redis.set(cacheKey, JSON.stringify(out), 'EX', secondsUntilMidnightIST());
+  }
   return out;
 }
 

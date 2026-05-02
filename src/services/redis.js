@@ -15,27 +15,58 @@ export function normalizeRedisUrl(raw) {
   return s.length ? s : null;
 }
 
-const redisUrl = normalizeRedisUrl(process.env.REDIS_URL);
-const effectiveUrl =
-  redisUrl || (process.env.NODE_ENV === 'production' ? null : 'redis://127.0.0.1:6379');
+const normalizedUrl = process.env.REDIS_URL?.trim()
+  ? normalizeRedisUrl(process.env.REDIS_URL)
+  : null;
 
-if (!effectiveUrl) {
-  throw new Error(
-    'REDIS_URL is required in production. Paste only the redis:// or rediss:// URL from Upstash (not the redis-cli command, not the REST URL).',
-  );
+/** No Redis client unless `REDIS_URL` is set — optional cache/queue only; OTP uses Postgres. */
+const KEEP_ALIVE_MS = Number(process.env.REDIS_KEEPALIVE_MS || 10000);
+
+export const redis = normalizedUrl
+  ? new Redis(normalizedUrl, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: true,
+      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 30000),
+      keepAlive: KEEP_ALIVE_MS,
+      retryStrategy(times) {
+        return Math.min(times * 150 + Math.random() * 250, 15000);
+      },
+      reconnectOnError(err) {
+        const code = err.code || '';
+        const msg = String(err.message || '');
+        if (
+          code === 'ECONNRESET' ||
+          code === 'EPIPE' ||
+          code === 'ETIMEDOUT' ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('READONLY')
+        ) {
+          return true;
+        }
+        return false;
+      },
+    })
+  : null;
+
+let _lastRedisErrorLogAt = 0;
+let _suppressedRedisErrors = 0;
+
+if (redis) {
+  redis.on('error', (err) => {
+    const now = Date.now();
+    if (now - _lastRedisErrorLogAt > 30000) {
+      const extra = _suppressedRedisErrors > 0 ? ` (+${_suppressedRedisErrors} suppressed)` : '';
+      console.error('Redis error:', err.message, err.code || '', extra);
+      _lastRedisErrorLogAt = now;
+      _suppressedRedisErrors = 0;
+    } else {
+      _suppressedRedisErrors += 1;
+    }
+  });
 }
 
-export const redis = new Redis(effectiveUrl, {
-  maxRetriesPerRequest: null,
-  retryStrategy: (times) => Math.min(times * 100, 3000),
-  enableReadyCheck: false,
-});
-
-redis.on('error', (err) => {
-  console.error('Redis error:', err.message);
-});
-
 async function delByPattern(pattern) {
+  if (!redis) return 0;
   const stream = redis.scanStream({ match: pattern, count: 250 });
   const keys = [];
   for await (const batch of stream) keys.push(...batch);
@@ -44,6 +75,7 @@ async function delByPattern(pattern) {
 }
 
 export async function invalidateUserFeedCache(userId) {
+  if (!redis) return;
   const patterns = [`feed:${userId}:*`, `explore:${userId}:*`];
   for (const p of patterns) {
     try {
@@ -55,6 +87,7 @@ export async function invalidateUserFeedCache(userId) {
 }
 
 export async function invalidateAllFeedCaches() {
+  if (!redis) return;
   const patterns = ['feed:*', 'explore:*'];
   for (const p of patterns) {
     try {

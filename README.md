@@ -1,6 +1,6 @@
 # Daily Katha — production API (`src/app.js`)
 
-Express service for `/health`, `/status`, and versioned REST under `/api/v1` (quotes, categories, moods, search, JWT favorites). Legacy card/feed API remains in `src/server.js` (`npm run legacy:start`).
+Express service for `/health`, `/status`, **`/v1/auth` (phone OTP — WhatsApp delivery via Meta Cloud API; test numbers `123456xxxx` use fixed OTP `560102`)**, **`/v1/users/*` (JWT)**, and `/api/v1` (quotes, categories, moods, search, JWT favorites). Legacy card/feed API remains in `src/server.js` (`npm run legacy:start`).
 
 ## Environments (dev / staging / production)
 
@@ -15,9 +15,9 @@ Use **separate databases** for the new v1 schema (`users` with integer `id`, `qu
 
 ## Local setup
 
-1. Copy env: `cp .env.example .env` and set `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `CORS_WHITELIST` (comma-separated origins; mobile/native clients often send no `Origin` header and are still allowed).
+1. Copy env: `cp .env.example .env` and set `DATABASE_URL`, `JWT_SECRET`, `CORS_WHITELIST` (comma-separated origins; mobile/native clients often send no `Origin` header and are still allowed). **`REDIS_URL` is optional** — without it, OTP uses Postgres (`otp_codes`); feed/today-picks caching is skipped; BullMQ generation jobs require Redis if you use that feature.
 2. Start Postgres + Redis: `docker compose up -d` (Postgres on host port **15432**, Redis **16379**).
-3. Apply schema: `npm ci && npm run migrate`
+3. Apply schema: `cd backend && npm ci && npm run migrate` (loads `backend/.env` — **`DATABASE_URL` must include the database name**, e.g. `...5432/dailykatha`, not `...5432` alone; otherwise Postgres tries database `siva` or your macOS username.)
 4. Run API: `npm run dev`
 
 OpenAPI UI: `http://localhost:3000/api-docs` and `http://localhost:3000/daily-katha-api.swagger.json`.
@@ -26,8 +26,9 @@ OpenAPI UI: `http://localhost:3000/api-docs` and `http://localhost:3000/daily-ka
 
 1. Create a **Web Service** with root `backend`, build `npm ci`, start `npm start`.
 2. Create **Managed Postgres** and set `DATABASE_URL` on the service.
-3. Add **Redis** (or Key Value) and set `REDIS_URL`.
+3. **Redis is optional.** Add it only if you want Redis-backed caching or BullMQ workers; otherwise omit `REDIS_URL` and rely on Postgres for OTP (run migrations so `otp_codes` exists).
 4. Set `JWT_SECRET`, `CORS_WHITELIST`, `NODE_ENV=production`, `ENVIRONMENT=production`, optional `SENTRY_DSN`.
+   - **Redis:** optional; without `REDIS_URL` the API does not open a Redis connection.
 5. **Build / release command** (or a one-off shell job): `cd backend && npm ci && npm run migrate:prod` using the same `DATABASE_URL`, then deploy. The included GitHub Action runs migrations before calling the deploy hook.
 6. In Render dashboard, create a **Deploy Hook** and store it as `RENDER_DEPLOY_HOOK_URL` in GitHub **production** secrets.
 

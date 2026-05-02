@@ -8,3 +8,10 @@ export const apiRateLimit = rateLimit({
   legacyHeaders: false,
 });
 
+export const feedRefreshLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+

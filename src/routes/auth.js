@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { HttpError } from '../middleware/errorHandler.js';
+import { HttpError } from '../utils/errorHandler.js';
 import { query } from '../db/pool.js';
 import { signUserToken } from '../services/jwt.js';
-import { storeOtp, verifyOtp } from '../services/otp.js';
+import { isTestBypassPhone, storeOtp, verifyOtp } from '../services/otp.js';
+import { sendOtpViaWhatsApp } from '../services/whatsappOtp.js';
 import { getUserInterests } from '../db/queries/userInterests.js';
 
 const router = Router();
@@ -33,10 +34,26 @@ router.post('/send-otp', async (req, res, next) => {
     const phone = normalizePhone(req.body?.phone);
     if (!phone) throw new HttpError(400, 'INVALID_PHONE', 'Provide a valid 10-digit Indian mobile');
     const code = await storeOtp(phone);
-    if (process.env.NODE_ENV !== 'production' || process.env.OTP_LOG_IN_PROD === 'true') {
-      console.info(`[mock-otp] ${phone} -> ${code}`);
+    const testBypass = isTestBypassPhone(phone);
+    if (process.env.NODE_ENV !== 'production' || process.env.OTP_LOG_IN_PROD === 'true' || testBypass) {
+      console.info(`[otp] ${phone} -> ${code}${testBypass ? ' (test prefix — fixed OTP)' : ''}`);
     }
-    res.json({ ok: true, requestId: phone, message: 'OTP sent (mock in dev: check server logs if Redis unavailable)' });
+    if (testBypass) {
+      res.json({
+        ok: true,
+        requestId: phone,
+        channel: 'test',
+        message: `Test number — use OTP ${code}`,
+      });
+      return;
+    }
+    await sendOtpViaWhatsApp(phone, code);
+    res.json({
+      ok: true,
+      requestId: phone,
+      channel: 'whatsapp',
+      message: 'OTP sent to your WhatsApp',
+    });
   } catch (e) {
     next(e);
   }

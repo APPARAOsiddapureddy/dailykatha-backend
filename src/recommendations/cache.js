@@ -1,6 +1,7 @@
 import { redis } from '../services/redis.js';
 
 export async function getCachedFeed(key) {
+  if (!redis) return null;
   try {
     const cached = await redis.get(key);
     return cached ? JSON.parse(cached) : null;
@@ -10,10 +11,10 @@ export async function getCachedFeed(key) {
 }
 
 export async function setCachedFeed(key, data, ttlSeconds = 900) {
+  if (!redis) return;
   try {
     await redis.set(key, JSON.stringify(data), 'EX', ttlSeconds);
   } catch (err) {
     console.warn('Cache set failed:', err.message);
   }
 }
-

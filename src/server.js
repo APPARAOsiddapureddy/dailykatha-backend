@@ -48,11 +48,15 @@ app.use(httpLogger);
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    await redis.ping();
+    let redisStatus = 'disabled';
+    if (redis) {
+      await redis.ping();
+      redisStatus = 'connected';
+    }
     res.json({
       status: 'ok',
       db: 'connected',
-      redis: 'connected',
+      redis: redisStatus,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     });
@@ -105,10 +109,12 @@ function shutdown(signal) {
     } catch (e) {
       console.warn('pool.end', e.message);
     }
-    try {
-      await redis.quit();
-    } catch (e) {
-      console.warn('redis.quit', e.message);
+    if (redis) {
+      try {
+        await redis.quit();
+      } catch (e) {
+        console.warn('redis.quit', e.message);
+      }
     }
     process.exit(0);
   });

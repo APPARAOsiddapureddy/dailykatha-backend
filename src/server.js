@@ -20,10 +20,17 @@ import adminRoutes from './routes/admin.js';
 import { adminAuth } from './middleware/adminAuth.js';
 import { startCronJobs } from './services/cronJobs.js';
 
-if (!process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET is required');
-  process.exit(1);
+function fatalUnlessEnv(name) {
+  const v = process.env[name];
+  if (v == null || String(v).trim() === '') {
+    console.error(
+      `FATAL: ${name} is required. Add it under Render → Environment for this Web Service (not only on a Postgres resource).`,
+    );
+    process.exit(1);
+  }
 }
+fatalUnlessEnv('DATABASE_URL');
+fatalUnlessEnv('JWT_SECRET');
 
 const app = express();
 app.set('trust proxy', 1);

@@ -20,7 +20,7 @@
     "build": "node -c src/app.js >/dev/null"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

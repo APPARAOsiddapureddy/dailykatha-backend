@@ -21,13 +21,22 @@ function optionalInt(name, fallback) {
   return n;
 }
 
+/**
+ * DATABASE_URL / JWT_SECRET use getters so importing `env` (e.g. from logger) does not
+ * throw before Node has finished loading — Render injects env after process start in some paths,
+ * and server.js validates required vars explicitly after imports.
+ */
 export const env = {
   nodeEnv: optional('NODE_ENV', 'development'),
   environment: optional('ENVIRONMENT', optional('NODE_ENV', 'development')),
   port: optionalInt('PORT', 3000),
-  databaseUrl: required('DATABASE_URL'),
+  get databaseUrl() {
+    return required('DATABASE_URL');
+  },
   redisUrl: optional('REDIS_URL', null),
-  jwtSecret: required('JWT_SECRET'),
+  get jwtSecret() {
+    return required('JWT_SECRET');
+  },
   corsWhitelist: optional('CORS_WHITELIST', '').split(',').map((s) => s.trim()).filter(Boolean),
   logLevel: optional('LOG_LEVEL', 'info'),
   sentryDsn: optional('SENTRY_DSN', null),

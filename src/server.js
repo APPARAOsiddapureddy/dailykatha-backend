@@ -8,7 +8,7 @@ import { jwtAuth, internalKeyAuth } from './middleware/auth.js';
 import { authLimiter, generalLimiter, internalLimiter } from './middleware/rateLimit.js';
 import { languageMiddleware } from './middleware/language.js';
 import { httpLogger } from './middleware/logger.js';
-import { pool } from './db/pool.js';
+import { pingDb, pool } from './db/pool.js';
 import { redis } from './services/redis.js';
 
 import authPublic from './routes/auth.js';
@@ -46,23 +46,42 @@ app.use(express.json({ limit: '2mb' }));
 app.use(httpLogger);
 
 app.get('/health', async (_req, res) => {
+  const base = {
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  };
+
   try {
-    await pool.query('SELECT 1');
-    let redisStatus = 'disabled';
-    if (redis) {
+    await pingDb();
+  } catch (err) {
+    console.error('Health DB check failed:', err.code, err.message);
+    return res.status(503).json({
+      status: 'error',
+      message: 'Service unavailable',
+      db: 'error',
+      redis: redis ? 'unknown' : 'disabled',
+      ...base,
+    });
+  }
+
+  let redisStatus = 'disabled';
+  if (redis) {
+    try {
       await redis.ping();
       redisStatus = 'connected';
+    } catch (err) {
+      // Redis is optional (cache/queues); do not fail liveness if DB is up.
+      console.warn('Health Redis check failed:', err.code, err.message);
+      redisStatus = 'error';
     }
-    res.json({
-      status: 'ok',
-      db: 'connected',
-      redis: redisStatus,
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    res.status(503).json({ status: 'error', message: 'Service unavailable' });
   }
+
+  res.json({
+    status: 'ok',
+    db: 'connected',
+    redis: redisStatus,
+    ...base,
+  });
 });
 
 app.get('/metrics', (req, res) => {
